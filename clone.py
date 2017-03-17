@@ -10,16 +10,29 @@ with open('data/driving_log.csv') as csvfile:
 	for line in reader:
 		lines.append(line)
 
+def current_path(csvpath):
+	filename = csvpath.split('/')[-1]
+	return 'data/IMG/' + filename
+
+
+use_side_cameras = True
 images = []
 measurements = []
 for line in lines:
-	source_path = line[0]
-	filename = source_path.split('/')[-1]
-	current_path = 'data/IMG/' + filename
-	image = cv2.imread(current_path)
-	images.append(image)
-	m = float(line[3])
-	measurements.append(m)
+	correction = 0.5
+	steering_center = float(line[3])
+	images.append( cv2.imread(current_path(line[0])) )
+	measurements.append(steering_center)
+
+	if use_side_cameras:
+		images.append( cv2.imread(current_path(line[1])) )
+		images.append( cv2.imread(current_path(line[2])) )
+
+		measurements.append(steering_center + correction )
+		measurements.append(steering_center - correction )
+	
+
+	
 
 
 #adding flipped images
@@ -65,8 +78,12 @@ def nvidia_model(model):
 	model.add( Convolution2D( 64, 3, 3, border_mode = 'valid', activation = 'relu' ))
 
 	model.add( Flatten() )
+
+	model.add( Dropout(0.5) )
 	model.add( Dense(100) )
+	model.add( Dropout(0.5) )
 	model.add( Dense(50) )
+	model.add( Dropout(0.5) )
 	model.add( Dense(10) )
 	model.add( Dense(1) )
 	return model
