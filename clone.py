@@ -74,20 +74,25 @@ def lenet_model(model):
 	return model
 
 def nvidia_model(model):
-        model.add( Convolution2D( 24, 5, 5, subsample=(2,2), border_mode = 'valid', activation='relu' ))
-        model.add( Convolution2D( 36, 5, 5, subsample=(2,2), border_mode = 'valid', activation = 'relu' ))
-        model.add( Convolution2D( 48, 5, 5, subsample=(2,2), border_mode = 'valid', activation = 'relu' ))
-        model.add( Convolution2D( 64, 3, 3, border_mode = 'valid', activation = 'relu' ))
-        model.add( Convolution2D( 64, 3, 3, border_mode = 'valid', activation = 'relu' ))
+	model.add( Convolution2D( 24, 5, 5, subsample=(2,2), border_mode = 'valid', activation='relu' ))
+	model.add( Convolution2D( 36, 5, 5, subsample=(2,2), border_mode = 'valid', activation = 'relu' ))
+	model.add( Convolution2D( 48, 5, 5, subsample=(2,2), border_mode = 'valid', activation = 'relu' ))
+	model.add( Convolution2D( 64, 3, 3, border_mode = 'valid', activation = 'relu' ))
+	model.add( Convolution2D( 64, 3, 3, border_mode = 'valid', activation = 'relu' ))
 
-        model.add( Flatten() )
+	model.add( Flatten() )
 
-        model.add( Dense(1164, activation='relu') )
-        model.add( Dense(100, activation='relu') )
-        model.add( Dense(50, activation='relu') )
-        model.add( Dense(10, activation='relu') )
-        model.add( Dense(1, activation='relu') )
-        return model
+	model.add( Dropout(0.5) )
+	model.add( Dense(1164 ))
+	model.add( Dropout(0.5) )
+	model.add( Dense(100 ))
+	model.add( Dropout(0.5) )
+	model.add( Dense(50))
+	model.add( Dropout(0.5) )
+	model.add( Dense(10))
+	model.add( Dropout(0.5) )
+	model.add( Dense(1))
+	return model
 
 
 model = nvidia_model(model)
@@ -98,7 +103,7 @@ model = nvidia_model(model)
 
 
 model.compile(loss='mse', optimizer='adam' )
-model.fit(X_train, y_train, validation_split=0.2, shuffle=True, nb_epoch=1, callbacks=[tensorflowcb] ) 
+model.fit(X_train, y_train, validation_split=0.2, shuffle=True, nb_epoch=3, callbacks=[tensorflowcb] ) 
 
 
 model.save('model.h5')
