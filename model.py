@@ -4,57 +4,26 @@ import numpy as np
 import sklearn
 
 
-
+################################################################################
+#           original training CSV data load                 
+################################################################################
 lines = []
 with open('data/driving_log.csv') as csvfile:
 	reader = csv.reader(csvfile)
 	for line in reader:
 		lines.append(line)
 
-def current_path(csvpath):
-	filename = csvpath.split('/')[-1]
-	return 'data/IMG/' + filename
-
-
-
-#load all images in memory
-if False:
-    use_side_cameras = True
-    images = []
-    measurements = []
-    for line in lines:
-            correction = 0.1
-            steering_center = float(line[3])
-            images.append( cv2.imread(current_path(line[0])) )
-            measurements.append(steering_center)
-
-            if use_side_cameras:
-                    images.append( cv2.imread(current_path(line[1])) )
-                    images.append( cv2.imread(current_path(line[2])) )
-
-                    measurements.append(steering_center + correction )
-                    measurements.append(steering_center - correction )
-            
-    #adding flipped images
-    aug_images, aug_measurements = [] ,[]
-    for image, measurement in zip(images, measurements):
-            aug_images.append( image )
-            aug_measurements.append( measurement) 
-            aug_images.append( cv2.flip(image, 1) ) 
-            aug_measurements.append( -1.0 * measurement )
-
-    X_train = np.array(aug_images)
-    y_train = np.array(aug_measurements)
-
-    print(X_train.shape)
-    print(y_train.shape)
-
-
-
-#python generator logic to load images on the fly
+################################################################################
+#           python generator logic to load images on the fly + augmentation logic
+################################################################################
 from sklearn.model_selection import train_test_split
 from random import shuffle
 train_samples, validation_samples = train_test_split( lines, test_size=0.2 )
+
+print("train_count: ", len(train_samples), "valid_count", len(validation_samples))
+def current_path(csvpath):
+	filename = csvpath.split('/')[-1]
+	return 'data/IMG/' + filename
 
 def generator(samples, batch_size=32):
     num_samples = len(samples)
@@ -98,8 +67,6 @@ nb_val_samples = len(validation_samples) * augmentation_factor  # 3x * 2
 
 train_generator = generator(train_samples)
 validation_generator = generator(validation_samples)
-	
-
 
 from keras.models import Sequential
 from keras.layers import Flatten, Lambda,  Dense, Dropout, Activation
@@ -110,12 +77,17 @@ from keras.callbacks import TensorBoard
 tensorflowcb = TensorBoard(log_dir='./logs', histogram_freq=0, write_graph=True, write_images=True)
 model = Sequential()
 
-#normalization
+################################################################################
+#       normalization
+################################################################################
 model.add(Lambda(lambda x: x/255.0 - 0.5, input_shape=(160,320,3)))
 model.add( Cropping2D(cropping=((70,25),(0,0))))
 
-keep_prob = 1
+keep_prob = 0.5
 
+################################################################################
+#       models definition
+################################################################################
 def lenet_model(model):
 	model.add( Convolution2D( 6, 5, 5, border_mode='valid', activation='relu'  ))
 	model.add( MaxPooling2D() )
@@ -150,6 +122,7 @@ def nvidia_model(model):
 
 	model.add( Flatten() )
 
+	model.add( Dropout(keep_prob) ) 
 	model.add( Dense(1164, activation='relu' ))
 	model.add( Dropout(keep_prob) )
 	model.add( Dense(100, activation='relu' ))
@@ -161,15 +134,12 @@ def nvidia_model(model):
 	return model
 
 
+################################################################################
+#       keras run         
+################################################################################
 model = nvidia_model(model)
-
-
-
-
-
-
 model.compile(loss='mse', optimizer='adam' )
-#model.fit(X_train, y_train, validation_split=0.2, shuffle=True, nb_epoch=3, callbacks=[tensorflowcb] ) 
+
 model.fit_generator( train_generator, samples_per_epoch=samples_per_epoch, 
                     validation_data=validation_generator, nb_val_samples=nb_val_samples, 
                     nb_epoch=3)
