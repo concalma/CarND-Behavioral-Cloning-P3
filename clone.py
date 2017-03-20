@@ -1,6 +1,7 @@
 import csv
 import cv2
 import numpy as np
+import sklearn
 
 
 
@@ -15,39 +16,90 @@ def current_path(csvpath):
 	return 'data/IMG/' + filename
 
 
-use_side_cameras = True
-images = []
-measurements = []
-for line in lines:
-	correction = 0.1
-	steering_center = float(line[3])
-	images.append( cv2.imread(current_path(line[0])) )
-	measurements.append(steering_center)
 
-	if use_side_cameras:
-		images.append( cv2.imread(current_path(line[1])) )
-		images.append( cv2.imread(current_path(line[2])) )
+#load all images in memory
+if False:
+    use_side_cameras = True
+    images = []
+    measurements = []
+    for line in lines:
+            correction = 0.1
+            steering_center = float(line[3])
+            images.append( cv2.imread(current_path(line[0])) )
+            measurements.append(steering_center)
 
-		measurements.append(steering_center + correction )
-		measurements.append(steering_center - correction )
+            if use_side_cameras:
+                    images.append( cv2.imread(current_path(line[1])) )
+                    images.append( cv2.imread(current_path(line[2])) )
+
+                    measurements.append(steering_center + correction )
+                    measurements.append(steering_center - correction )
+            
+    #adding flipped images
+    aug_images, aug_measurements = [] ,[]
+    for image, measurement in zip(images, measurements):
+            aug_images.append( image )
+            aug_measurements.append( measurement) 
+            aug_images.append( cv2.flip(image, 1) ) 
+            aug_measurements.append( -1.0 * measurement )
+
+    X_train = np.array(aug_images)
+    y_train = np.array(aug_measurements)
+
+    print(X_train.shape)
+    print(y_train.shape)
+
+
+
+#python generator logic to load images on the fly
+from sklearn.model_selection import train_test_split
+from random import shuffle
+train_samples, validation_samples = train_test_split( lines, test_size=0.2 )
+
+def generator(samples, batch_size=32):
+    num_samples = len(samples)
+    while True:
+        shuffle(samples)
+        for offset in range(0, num_samples, batch_size):
+            batch_samples = samples[ offset: offset+batch_size ]
+
+            images = []
+            steer = []
+
+            for batch_sample in batch_samples:
+                center_image = cv2.imread( current_path( batch_sample[0] ))
+                left_image =   cv2.imread( current_path( batch_sample[1] ))
+                right_image =  cv2.imread( current_path( batch_sample[2] ))
+
+                correction = 0.1
+                steering_center = float( batch_sample[3] )
+                steering_leftcam = steering_center + correction
+                steering_rightcam = steering_center - correction
+
+                images += [center_image, left_image, right_image]
+                steer += [steering_center, steering_leftcam, steering_rightcam]
+
+            aug_images, aug_measurements = [] ,[]
+            for image, measurement in zip(images, steer):
+                aug_images.append( image )
+                aug_measurements.append( measurement ) 
+                aug_images.append( cv2.flip(image, 1) ) 
+                aug_measurements.append( -1.0 * measurement )
+
+            X_train = np.array(aug_images)
+            y_train = np.array(aug_measurements)
+
+            # print(X_train.shape, y_train_shape)
+            yield sklearn.utils.shuffle( X_train, y_train )
+
+augmentation_factor = 6 
+samples_per_epoch = len(train_samples)   * augmentation_factor  # 3x * 2
+nb_val_samples = len(validation_samples) * augmentation_factor  # 3x * 2
+
+train_generator = generator(train_samples)
+validation_generator = generator(validation_samples)
 	
 
-	
-
-
-#adding flipped images
-aug_images, aug_measurements = [] ,[]
-for image, measurement in zip(images, measurements):
-	aug_images.append( image )
-	aug_measurements.append( measurement) 
-	aug_images.append( cv2.flip(image, 1) ) 
-	aug_measurements.append( -1.0 * measurement )
-
-X_train = np.array(aug_images)
-y_train = np.array(aug_measurements)
-
-print(X_train.shape)
-print(y_train.shape)
 
 from keras.models import Sequential
 from keras.layers import Flatten, Lambda,  Dense, Dropout, Activation
@@ -75,6 +127,20 @@ def lenet_model(model):
 	model.add( Dense(1) )
 	return model
 
+def nvidialite_model(model):
+	model.add( Convolution2D( 48, 5, 5, subsample=(2,2), border_mode = 'valid', activation='relu' ))
+	model.add( Convolution2D( 64, 5, 5, subsample=(2,2), border_mode = 'valid', activation = 'relu' ))
+
+	model.add( Flatten() )
+
+	model.add( Dense(100, activation='relu' ))
+	model.add( Dropout(keep_prob) )
+	model.add( Dense(50, activation='relu' ))
+	model.add( Dropout(keep_prob) )
+	model.add( Dense(10, activation='relu' ))
+	model.add( Dense(1, activation='tanh' ))
+	return model
+        
 def nvidia_model(model):
 	model.add( Convolution2D( 24, 5, 5, subsample=(2,2), border_mode = 'valid', activation='relu' ))
 	model.add( Convolution2D( 36, 5, 5, subsample=(2,2), border_mode = 'valid', activation = 'relu' ))
@@ -103,7 +169,9 @@ model = nvidia_model(model)
 
 
 model.compile(loss='mse', optimizer='adam' )
-model.fit(X_train, y_train, validation_split=0.2, shuffle=True, nb_epoch=1, callbacks=[tensorflowcb] ) 
-
+#model.fit(X_train, y_train, validation_split=0.2, shuffle=True, nb_epoch=3, callbacks=[tensorflowcb] ) 
+model.fit_generator( train_generator, samples_per_epoch=samples_per_epoch, 
+                    validation_data=validation_generator, nb_val_samples=nb_val_samples, 
+                    nb_epoch=3)
 
 model.save('model.h5')
